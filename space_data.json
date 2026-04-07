@@ -1,0 +1,25 @@
+{
+  "name": "Smart FAQ Builder",
+  "tagline": "Product URL → 20 real-customer FAQs with objection-handling answers + schema markup",
+  "description": "Scrapes any product page and generates benefit-oriented FAQs that reduce support tickets and boost SEO. Outputs structured FAQ sets organized by theme, JSON-LD schema markup for rich snippets, Shopify-ready HTML, chatbot training CSV, and an objection-handling subset targeting price, returns, warranty, and delivery concerns.",
+  "category": "Text",
+  "tags": ["faq", "seo", "shopify", "ecommerce", "schema", "chatbot", "content"],
+  "inputs": [
+    "Product URL",
+    "FAQ count (10–30)",
+    "Tone",
+    "Language",
+    "Question sources",
+    "Competitor comparison toggle"
+  ],
+  "outputs": [
+    "Structured FAQ set organized by theme",
+    "JSON-LD schema markup",
+    "Shopify HTML block",
+    "Chatbot training CSV",
+    "Objection-handling FAQ subset"
+  ],
+  "stack": ["Web scraping", "Ollama Mistral", "n8n", "Schema generator", "CSV/HTML export"],
+  "difficulty": "low",
+  "bounty_id": "C-11"
+}

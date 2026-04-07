@@ -1,0 +1,53 @@
+{
+  "form_title": "Smart FAQ Builder",
+  "form_description": "Generate SEO-ready FAQs from any product URL",
+  "fields": [
+    {
+      "name": "product_url",
+      "label": "Product URL",
+      "type": "url",
+      "required": true,
+      "placeholder": "https://example.com/product"
+    },
+    {
+      "name": "faq_count",
+      "label": "Number of FAQs",
+      "type": "number",
+      "required": false,
+      "default": 20,
+      "min": 10,
+      "max": 30
+    },
+    {
+      "name": "tone",
+      "label": "Tone",
+      "type": "select",
+      "required": false,
+      "default": "professional",
+      "options": ["professional", "friendly", "casual", "authoritative", "empathetic"]
+    },
+    {
+      "name": "language",
+      "label": "Language",
+      "type": "select",
+      "required": false,
+      "default": "English",
+      "options": ["English", "Spanish", "French", "German", "Portuguese", "Hindi", "Japanese"]
+    },
+    {
+      "name": "question_sources",
+      "label": "Question Sources",
+      "type": "multiselect",
+      "required": false,
+      "default": ["product_page", "reviews", "google_paa"],
+      "options": ["product_page", "reviews", "google_paa", "amazon_qa", "competitors"]
+    },
+    {
+      "name": "competitor_comparison",
+      "label": "Include Competitor Comparison FAQs",
+      "type": "boolean",
+      "required": false,
+      "default": false
+    }
+  ]
+}

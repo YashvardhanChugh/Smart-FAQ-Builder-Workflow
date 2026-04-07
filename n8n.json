@@ -1,0 +1,286 @@
+{
+  "name": "Smart FAQ Builder",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "smart-faq-builder",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -48,
+        -80
+      ],
+      "id": "2aa1ff83-54ac-4c94-834f-5050c1d7d366",
+      "name": "Webhook",
+      "webhookId": "0bf17c75-596d-4b0e-a5be-bba72451aaa5"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate and extract all inputs from the webhook body\nconst body = $json.body || {};\n\nconst productUrl = body.product_url || \"\";\nconst questionSources = body.question_sources || [\"product_page\", \"reviews\", \"competitors\"];\nconst faqCount = Math.min(Math.max(parseInt(body.faq_count) || 20, 10), 30);\nconst tone = body.tone || \"professional\";\nconst language = body.language || \"English\";\nconst competitorComparison = body.competitor_comparison === true || body.competitor_comparison === \"true\";\n\nif (!productUrl) {\n  throw new Error(\"Missing required input: product_url\");\n}\n\nreturn [\n  {\n    json: {\n      product_url: productUrl,\n      question_sources: questionSources,\n      faq_count: faqCount,\n      tone: tone,\n      language: language,\n      competitor_comparison: competitorComparison\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        -80
+      ],
+      "id": "6ce8e87f-a3a8-4ebb-b311-eee8d19b4857",
+      "name": "Validate & Extract Inputs"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.product_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        352,
+        -80
+      ],
+      "id": "eb4b2233-f8c2-42db-af52-58a7388f6658",
+      "name": "Scrape Product Page"
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = items[0].json.data || \"\";\n\n// Remove scripts, styles, and all HTML tags\nconst cleanText = html\n  .replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n  .replace(/<style[\\s\\S]*?<\\/style>/gi, '')\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/&nbsp;/g, ' ')\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/&quot;/g, '\"')\n  .replace(/\\s+/g, ' ')\n  .trim();\n\n// Pass through all inputs alongside the cleaned content\nconst inputs = items[0].json;\n\nreturn [\n  {\n    json: {\n      content: cleanText.slice(0, 10000),\n      product_url: inputs.product_url,\n      question_sources: inputs.question_sources,\n      faq_count: inputs.faq_count,\n      tone: inputs.tone,\n      language: inputs.language,\n      competitor_comparison: inputs.competitor_comparison\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        -80
+      ],
+      "id": "6ef9cce9-6a3c-4348-b45a-96c70a0b459a",
+      "name": "Clean HTML"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mine questions from multiple sources based on question_sources input\nconst item = items[0].json;\nconst sources = item.question_sources || [\"product_page\"];\nconst competitorComparison = item.competitor_comparison || false;\n\n// Build question mining context\nlet miningContext = [];\n\nif (sources.includes(\"product_page\") || sources.includes(\"reviews\")) {\n  miningContext.push(\"Product page content and customer reviews\");\n}\nif (sources.includes(\"competitors\")) {\n  miningContext.push(\"Competitor product comparisons\");\n}\nif (sources.includes(\"amazon_qa\")) {\n  miningContext.push(\"Amazon Q&A style questions\");\n}\nif (sources.includes(\"google_paa\")) {\n  miningContext.push(\"Google People Also Ask style questions\");\n}\n\n// Always include all standard sources if none match\nif (miningContext.length === 0) {\n  miningContext = [\n    \"Product page content and customer reviews\",\n    \"Amazon Q&A style questions\",\n    \"Google People Also Ask style questions\"\n  ];\n}\n\nif (competitorComparison) {\n  miningContext.push(\"Head-to-head competitor comparison questions\");\n}\n\nreturn [\n  {\n    json: {\n      ...item,\n      mining_context: miningContext.join(\", \")\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        -80
+      ],
+      "id": "b48451c9-f47a-45b3-a629-6c7ce8257202",
+      "name": "Question Mining Context"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an expert FAQ writer for e-commerce products. Your job is to generate highly relevant, benefit-oriented FAQs that reduce support tickets and handle purchase objections.\n\nPRODUCT CONTENT:\n{{$json[\"content\"]}}\n\nTASK:\nGenerate exactly {{ $('Validate & Extract Inputs').item.json.faq_count }} FAQs based on the product content above.\n\nQUESTION SOURCES TO CONSIDER:\n{{$json[\"mining_context\"]}}\n\nWRITING RULES:\n- Tone: {{$json[\"tone\"]}}\n- Language: {{$json[\"language\"]}}\n- Address real customer concerns and purchase objections (price, returns, warranty, delivery, compatibility, etc.)\n- Write benefit-first answers — address the underlying concern, not just the surface question\n- Group questions by theme (e.g. Shipping, Returns, Product Features, Compatibility, Pricing, Warranty)\n- Every FAQ MUST include all three fields: question, answer, theme\n- NEVER leave any field empty or use placeholders like \"N/A\" or \"(no answer provided)\"\n- If information is not available in the content, generate a reasonable, helpful answer\n{{$json[\"competitor_comparison\"] ? \"- Include 2-3 FAQs that address competitor comparisons\" : \"\"}}\n\nCRITICAL:\nReturn ONLY valid JSON array.\nNo explanation. No extra text. No markdown. No code fences.\n\nOUTPUT FORMAT:\n[\n  {\n    \"question\": \"string\",\n    \"answer\": \"string\",\n    \"theme\": \"string\"\n  }\n]",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        896,
+        -224
+      ],
+      "id": "f6cbca94-50c9-4069-bdc5-bc4f7092b226",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $json.output || \"\";\n\n// Strip any markdown code fences if present\nraw = raw.replace(/```json\\s*/gi, '').replace(/```\\s*/gi, '').trim();\n\n// Remove invalid placeholders\nraw = raw.replace(/\\(no answer provided\\)/g, 'Please contact support for more information.');\nraw = raw.replace(/N\\/A/g, 'Please contact support for more information.');\n\n// Extract JSON array\nconst start = raw.indexOf('[');\nconst end = raw.lastIndexOf(']');\n\nlet parsed = [];\n\ntry {\n  if (start === -1 || end === -1) throw new Error(\"No JSON array found\");\n  const jsonString = raw.slice(start, end + 1);\n  parsed = JSON.parse(jsonString);\n\n  // Filter out any entries missing required fields\n  parsed = parsed.filter(faq =>\n    faq.question && faq.question.trim() !== '' &&\n    faq.answer && faq.answer.trim() !== '' &&\n    faq.theme && faq.theme.trim() !== ''\n  );\n\n  // Deduplicate by question\n  const seen = new Set();\n  parsed = parsed.filter(faq => {\n    const key = faq.question.toLowerCase().trim();\n    if (seen.has(key)) return false;\n    seen.add(key);\n    return true;\n  });\n\n} catch (e) {\n  return [{ json: { error: \"Invalid AI JSON output\", raw: raw.slice(0, 500) } }];\n}\n\nreturn [\n  {\n    json: {\n      faqs: parsed,\n      faq_count_requested: $('Question Mining Context').first().json.faq_count,\n      faq_count_generated: parsed.length\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        -80
+      ],
+      "id": "cc5665b4-b8e4-4b20-9902-7b34e588710d",
+      "name": "Parse & Deduplicate FAQs"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json;\n\n// Handle invalid AI output\nif (!input.faqs || input.faqs.length === 0 || input.error) {\n  return [\n    {\n      json: {\n        success: false,\n        faqs: [],\n        json_ld: {},\n        shopify_html: \"\",\n        chatbot_csv: \"\",\n        objection_faqs: [],\n        themes: [],\n        error: input.error || \"AI returned no valid FAQs\"\n      }\n    }\n  ];\n}\n\nconst faqs = input.faqs;\nconst safe = (val) => (val || \"\").replace(/\"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst safeCsv = (val) => (val || \"\").replace(/\"/g, '\"\"');\n\n// 1. JSON-LD schema markup (SEO rich snippets)\nconst jsonLd = {\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"FAQPage\",\n  \"mainEntity\": faqs.map(faq => ({\n    \"@type\": \"Question\",\n    \"name\": faq.question,\n    \"acceptedAnswer\": {\n      \"@type\": \"Answer\",\n      \"text\": faq.answer\n    }\n  }))\n};\n\n// 2. Shopify HTML (grouped by theme)\nconst byTheme = {};\nfaqs.forEach(faq => {\n  const theme = faq.theme || \"General\";\n  if (!byTheme[theme]) byTheme[theme] = [];\n  byTheme[theme].push(faq);\n});\n\nlet html = '<div class=\"faq-container\">\\n';\nObject.entries(byTheme).forEach(([theme, items]) => {\n  html += `  <div class=\"faq-theme\">\\n    <h2 class=\"faq-theme-title\">${safe(theme)}</h2>\\n`;\n  items.forEach(faq => {\n    html += `    <div class=\"faq-item\">\\n      <h3 class=\"faq-question\">${safe(faq.question)}</h3>\\n      <p class=\"faq-answer\">${safe(faq.answer)}</p>\\n    </div>\\n`;\n  });\n  html += '  </div>\\n';\n});\nhtml += '</div>';\n\n// 3. Chatbot CSV (for chatbot training)\nconst csvRows = [\n  \"question,answer,theme\",\n  ...faqs.map(f => `\"${safeCsv(f.question)}\",\"${safeCsv(f.answer)}\",\"${safeCsv(f.theme)}\"`)\n];\nconst csv = csvRows.join(\"\\n\");\n\n// 4. Objection-handling subset\nconst objectionKeywords = [\"price\", \"cost\", \"expensive\", \"return\", \"refund\", \"warranty\", \"guarantee\", \"availability\", \"delivery\", \"shipping\", \"competitor\", \"vs\", \"versus\", \"compare\", \"better\", \"difference\"];\nconst objections = faqs.filter(f =>\n  objectionKeywords.some(k =>\n    (f.question || \"\").toLowerCase().includes(k) ||\n    (f.theme || \"\").toLowerCase().includes(k)\n  )\n);\n\n// 5. Theme summary\nconst themes = Object.keys(byTheme).map(theme => ({\n  theme,\n  count: byTheme[theme].length\n}));\n\nreturn [\n  {\n    json: {\n      success: true,\n      faq_count_requested: input.faq_count_requested,\n      faq_count_generated: faqs.length,\n      themes,\n      faqs,\n      json_ld: jsonLd,\n      shopify_html: html,\n      chatbot_csv: csv,\n      objection_faqs: objections\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        -80
+      ],
+      "id": "462ffeda-c7aa-4371-98ea-df9ac998b65f",
+      "name": "Format All Outputs"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1552,
+        -80
+      ],
+      "id": "45b96b78-cfa0-4f34-96ec-9549fed0bf28",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "model": "mistral:latest",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        928,
+        80
+      ],
+      "id": "fd2f274b-b5e4-4952-a61a-62ae26d1b480",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "KSTkx1uPYEFlIOrA",
+          "name": "Ollama account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate & Extract Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Extract Inputs": {
+      "main": [
+        [
+          {
+            "node": "Scrape Product Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Product Page": {
+      "main": [
+        [
+          {
+            "node": "Clean HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean HTML": {
+      "main": [
+        [
+          {
+            "node": "Question Mining Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Question Mining Context": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse & Deduplicate FAQs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Deduplicate FAQs": {
+      "main": [
+        [
+          {
+            "node": "Format All Outputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format All Outputs": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0bfa57f4-f4f4-406e-b536-69fb0888a3cb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "558d88703fb65b2d0e44613bc35916258b0f0bf983c5d4730c00c424b77ca36a"
+  },
+  "id": "0bW5lRLLIXAy51iU",
+  "tags": []
+}
