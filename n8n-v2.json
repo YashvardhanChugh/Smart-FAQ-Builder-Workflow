@@ -1,0 +1,424 @@
+{
+  "name": "Smart FAQ Builder v2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "smart-faq-builder",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        112
+      ],
+      "id": "5c9fea3c-5327-4126-b9b1-44cb8abcb132",
+      "name": "Webhook",
+      "webhookId": "0bf17c75-596d-4b0e-a5be-bba72451aaa5"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || {};\n\nconst productUrl = body.product_url || \"\";\nconst questionSources = body.question_sources || [\"product_page\", \"reviews\", \"competitors\"];\nconst faqCount = Math.min(Math.max(parseInt(body.faq_count) || 20, 10), 30);\nconst tone = body.tone || \"professional\";\nconst language = body.language || \"English\";\nconst competitorComparison = body.competitor_comparison === true || body.competitor_comparison === \"true\";\n\nif (!productUrl) {\n  throw new Error(\"Missing required input: product_url\");\n}\n\nreturn [{\n  json: {\n    product_url: productUrl,\n    question_sources: questionSources,\n    faq_count: faqCount,\n    tone: tone,\n    language: language,\n    competitor_comparison: competitorComparison\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        112
+      ],
+      "id": "18aa8217-b5b9-4a5f-9ae9-c94c999629f4",
+      "name": "Validate & Extract Inputs"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.product_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        400,
+        112
+      ],
+      "id": "560a5ae6-ec5e-481d-93e8-c12c2e9f6896",
+      "name": "Scrape Page"
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = items[0].json.data || \"\";\n\nconst cleanText = html\n  .replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n  .replace(/<style[\\s\\S]*?<\\/style>/gi, '')\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/&nbsp;/g, ' ')\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/&quot;/g, '\"')\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nconst inputs = items[0].json;\n\nreturn [{\n  json: {\n    content: cleanText.slice(0, 10000),\n    product_url: inputs.product_url,\n    question_sources: inputs.question_sources,\n    faq_count: inputs.faq_count,\n    tone: inputs.tone,\n    language: inputs.language,\n    competitor_comparison: inputs.competitor_comparison\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        112
+      ],
+      "id": "98194eb0-510a-4b8f-b8ab-671f19cab410",
+      "name": "Clean HTML"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an expert business analyst. Analyze the following web page content and return a structured classification.\n\nURL: {{ $('Validate & Extract Inputs').item.json.product_url }}\n\nPAGE CONTENT:\n{{$json[\"content\"]}}\n\nAnalyze this page and determine:\n\n1. PAGE TYPE - one of: product_page, brand_homepage, category_page, pricing_page, landing_page, blog_post, about_page\n2. INDUSTRY - the specific industry (e.g. consumer electronics, SaaS, fashion, food & beverage, healthcare, B2B software, fitness, home goods, etc.)\n3. BUSINESS MODEL - one of: B2C, B2B, B2B2C, marketplace, subscription, D2C, enterprise\n4. BUYING JOURNEY STAGE - one of: awareness, consideration, decision\n5. BRAND NAME - the company or brand name\n6. PRODUCT NAME - specific product name if this is a product page, otherwise null\n7. PRICE TIER - one of: budget, mid-range, premium, luxury, enterprise, freemium\n8. TARGET CUSTOMER - who this is for in one sentence\n9. TOP USPs - array of 3-5 unique selling points found on the page\n10. KEY THEMES - array of 4-6 main topics this page covers\n\nCRITICAL: Return ONLY valid JSON. No explanation. No markdown. No code fences.\n\nOUTPUT FORMAT:\n{\n  \"page_type\": \"string\",\n  \"industry\": \"string\",\n  \"business_model\": \"string\",\n  \"buying_journey_stage\": \"string\",\n  \"brand_name\": \"string\",\n  \"product_name\": \"string or null\",\n  \"price_tier\": \"string\",\n  \"target_customer\": \"string\",\n  \"top_usps\": [\"string\"],\n  \"key_themes\": [\"string\"]\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        784,
+        -192
+      ],
+      "id": "701ee4b2-8aaa-4ad6-b111-1b8f97e85397",
+      "name": "AI Step 1: Classify Page"
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $json.output || \"\";\n\nraw = raw.replace(/```json\\s*/gi, '').replace(/```\\s*/gi, '').trim();\n\nconst start = raw.indexOf('{');\nconst end = raw.lastIndexOf('}');\n\nlet classification = {};\n\ntry {\n  classification = JSON.parse(raw.slice(start, end + 1));\n} catch(e) {\n  classification = {\n    page_type: \"product_page\",\n    industry: \"general\",\n    business_model: \"B2C\",\n    buying_journey_stage: \"consideration\",\n    brand_name: \"Unknown Brand\",\n    product_name: null,\n    price_tier: \"mid-range\",\n    target_customer: \"general consumers\",\n    top_usps: [],\n    key_themes: []\n  };\n}\n\nconst validateNode = $('Validate & Extract Inputs').first().json;\nconst cleanNode = $('Clean HTML').first().json;\n\nreturn [{\n  json: {\n    product_url: validateNode.product_url,\n    question_sources: validateNode.question_sources,\n    faq_count: validateNode.faq_count,\n    tone: validateNode.tone,\n    language: validateNode.language,\n    competitor_comparison: validateNode.competitor_comparison,\n    content: cleanNode.content,\n    classification: classification,\n    is_product_page: ['product_page', 'landing_page'].includes(classification.page_type),\n    is_brand_page: ['brand_homepage', 'about_page', 'category_page'].includes(classification.page_type),\n    is_pricing_page: classification.page_type === 'pricing_page',\n    is_decision_stage: classification.buying_journey_stage === 'decision',\n    is_awareness_stage: classification.buying_journey_stage === 'awareness'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        112
+      ],
+      "id": "7d2de33a-1152-4b0a-a568-1bd80e0fdb90",
+      "name": "Parse Classification"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an expert customer researcher. Your job is to deeply understand what a customer needs to know before making a decision about this specific offering.\n\nHere is what we know about this page:\n\nURL: {{$json[\"product_url\"]}}\nPage Type: {{$json[\"classification\"][\"page_type\"]}}\nIndustry: {{$json[\"classification\"][\"industry\"]}}\nBusiness Model: {{$json[\"classification\"][\"business_model\"]}}\nBuying Journey Stage: {{$json[\"classification\"][\"buying_journey_stage\"]}}\nBrand: {{$json[\"classification\"][\"brand_name\"]}}\nProduct: {{$json[\"classification\"][\"product_name\"]}}\nPrice Tier: {{$json[\"classification\"][\"price_tier\"]}}\nTarget Customer: {{$json[\"classification\"][\"target_customer\"]}}\nKey USPs: {{$json[\"classification\"][\"top_usps\"]}}\nKey Themes: {{$json[\"classification\"][\"key_themes\"]}}\n\nPAGE CONTENT:\n{{$json[\"content\"]}}\n\nYour task:\n\n1. DEEP DIVE - Based on the page type and industry, extract:\n   - If product page: exact specs, pricing details, compatibility, what problem it solves, what makes it different, known limitations\n   - If brand/company page: full product/service range, pricing tiers, target segments, brand values, support model, geographic availability\n   - If pricing page: plan differences, what's included/excluded, upgrade paths, billing terms, hidden costs\n\n2. CUSTOMER HESITATIONS - List the top 8-10 specific hesitations a real customer at the {{$json[\"classification\"][\"buying_journey_stage\"]}} stage would have. These must be specific to:\n   - This exact industry ({{$json[\"classification\"][\"industry\"]}})\n   - This price tier ({{$json[\"classification\"][\"price_tier\"]}})\n   - This business model ({{$json[\"classification\"][\"business_model\"]}})\n   NOT generic hesitations like \"is this worth it\"\n\n3. COMPETITOR CONTEXT - {{$json[\"competitor_comparison\"] ? \"Identify 2-3 likely competitors for this offering and what customers typically compare when choosing between them\" : \"Skip this section, return empty array\"}}\n\n4. INDUSTRY SPECIFIC CONCERNS - What are the top concerns unique to the {{$json[\"classification\"][\"industry\"]}} industry that customers always ask about?\n\nCRITICAL: Return ONLY valid JSON. No explanation. No markdown. No code fences.\n\nOUTPUT FORMAT:\n{\n  \"deep_dive\": \"string summarizing key details found\",\n  \"customer_hesitations\": [\"string\"],\n  \"competitor_context\": [\"string\"],\n  \"industry_concerns\": [\"string\"]\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1136,
+        -192
+      ],
+      "id": "8800bca6-48ce-4ba5-9014-4eb431f14ddd",
+      "name": "AI Step 2: Deep Dive Analysis"
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $json.output || \"\";\n\nraw = raw.replace(/```json\\s*/gi, '').replace(/```\\s*/gi, '').trim();\n\nconst start = raw.indexOf('{');\nconst end = raw.lastIndexOf('}');\n\nlet deepDive = {};\n\ntry {\n  deepDive = JSON.parse(raw.slice(start, end + 1));\n} catch(e) {\n  deepDive = {\n    deep_dive: \"Product/service analysis not available\",\n    customer_hesitations: [],\n    competitor_context: [],\n    industry_concerns: []\n  };\n}\n\nconst prev = $('Parse Classification').first().json;\n\nreturn [{\n  json: {\n    ...prev,\n    deep_dive: deepDive\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1408,
+        112
+      ],
+      "id": "c672d8c5-5d86-41d3-9890-d1428a1ab6b8",
+      "name": "Parse Deep Dive"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an expert FAQ writer. You have deep context about a specific page and its customers. Generate highly targeted FAQs that feel like they were written exclusively for this offering.\n\n--- CONTEXT ---\nBrand: {{$json[\"classification\"][\"brand_name\"]}}\nProduct/Service: {{$json[\"classification\"][\"product_name\"] || \"(brand-level)\"}}\nIndustry: {{$json[\"classification\"][\"industry\"]}}\nBusiness Model: {{$json[\"classification\"][\"business_model\"]}}\nBuying Journey Stage: {{$json[\"classification\"][\"buying_journey_stage\"]}}\nPrice Tier: {{$json[\"classification\"][\"price_tier\"]}}\nTarget Customer: {{$json[\"classification\"][\"target_customer\"]}}\nKey USPs: {{$json[\"classification\"][\"top_usps\"]}}\n\nDeep Analysis: {{$json[\"deep_dive\"][\"deep_dive\"]}}\nCustomer Hesitations: {{$json[\"deep_dive\"][\"customer_hesitations\"]}}\nIndustry Concerns: {{$json[\"deep_dive\"][\"industry_concerns\"]}}\n{{$json[\"competitor_comparison\"] ? \"Competitor Context: \" + $json[\"deep_dive\"][\"competitor_context\"] : \"\"}}\n\nOriginal Page Content:\n{{$json[\"content\"]}}\n\n--- TASK ---\nGenerate exactly {{$json[\"faq_count\"]}} FAQs.\n\nSTRICT RULES:\n- Tone: {{$json[\"tone\"]}}\n- Language: {{$json[\"language\"]}}\n- Every FAQ must feel like it could ONLY belong to {{$json[\"classification\"][\"brand_name\"]}} — not any generic brand\n- Answers must reference specific details from the page content where possible\n- Group by theme — themes must be specific to this industry, NOT generic (e.g. not just \"Shipping\" but \"Delivery & Installation\" for furniture, or \"Onboarding & Setup\" for SaaS)\n- For {{$json[\"classification\"][\"buying_journey_stage\"]}} stage: {{$json[\"is_decision_stage\"] ? \"Focus heavily on objection handling, trust signals, guarantees, and final purchase concerns\" : $json[\"is_awareness_stage\"] ? \"Focus on education, what this is, who it is for, and how it works\" : \"Focus on comparison, features, value, and differentiators\"}}\n- Address all customer hesitations identified in the analysis\n- Address all industry-specific concerns\n{{$json[\"competitor_comparison\"] ? \"- Include 2-3 FAQs that directly address why this is better than or different from competitors\" : \"\"}}\n- NEVER write generic FAQ answers — every answer must contain something specific to this brand/product\n- NEVER leave fields empty\n\nCRITICAL: Return ONLY a valid JSON array. No explanation. No markdown. No code fences.\n\nOUTPUT FORMAT:\n[\n  {\n    \"question\": \"string\",\n    \"answer\": \"string\",\n    \"theme\": \"string\"\n  }\n]",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1552,
+        -192
+      ],
+      "id": "f87961c6-867e-463a-b048-b653851c88fa",
+      "name": "AI Step 3: Generate FAQs"
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $json.output || \"\";\n\nraw = raw.replace(/```json\\s*/gi, '').replace(/```\\s*/gi, '').trim();\nraw = raw.replace(/\\(no answer provided\\)/g, 'Please contact support for more information.');\nraw = raw.replace(/N\\/A/g, 'Please contact support for more information.');\n\nconst start = raw.indexOf('[');\nconst end = raw.lastIndexOf(']');\n\nlet parsed = [];\n\ntry {\n  if (start === -1 || end === -1) throw new Error(\"No JSON array found\");\n  parsed = JSON.parse(raw.slice(start, end + 1));\n\n  parsed = parsed.filter(faq =>\n    faq.question && faq.question.trim() !== '' &&\n    faq.answer && faq.answer.trim() !== '' &&\n    faq.theme && faq.theme.trim() !== ''\n  );\n\n  const seen = new Set();\n  parsed = parsed.filter(faq => {\n    const key = faq.question.toLowerCase().trim();\n    if (seen.has(key)) return false;\n    seen.add(key);\n    return true;\n  });\n\n} catch (e) {\n  return [{ json: { error: \"Invalid AI JSON output\", raw: raw.slice(0, 500) } }];\n}\n\nconst validateNode = $('Validate & Extract Inputs').first().json;\nconst classificationNode = $('Parse Classification').first().json;\n\nreturn [{\n  json: {\n    faqs: parsed,\n    faq_count_requested: validateNode.faq_count,\n    faq_count_generated: parsed.length,\n    classification: classificationNode.classification\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        112
+      ],
+      "id": "84b84879-cf0e-4871-8eee-c959a5defc43",
+      "name": "Parse & Deduplicate FAQs"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json;\n\nif (!input.faqs || input.faqs.length === 0 || input.error) {\n  return [{\n    json: {\n      success: false,\n      faqs: [],\n      json_ld: {},\n      shopify_html: \"\",\n      chatbot_csv: \"\",\n      objection_faqs: [],\n      themes: [],\n      classification: input.classification || {},\n      error: input.error || \"AI returned no valid FAQs\"\n    }\n  }];\n}\n\nconst faqs = input.faqs;\nconst classification = input.classification || {};\nconst safe = (val) => (val || \"\").replace(/\"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst safeCsv = (val) => (val || \"\").replace(/\"/g, '\"\"');\n\nconst jsonLd = {\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"FAQPage\",\n  \"mainEntity\": faqs.map(faq => ({\n    \"@type\": \"Question\",\n    \"name\": faq.question,\n    \"acceptedAnswer\": {\n      \"@type\": \"Answer\",\n      \"text\": faq.answer\n    }\n  }))\n};\n\nconst byTheme = {};\nfaqs.forEach(faq => {\n  const theme = faq.theme || \"General\";\n  if (!byTheme[theme]) byTheme[theme] = [];\n  byTheme[theme].push(faq);\n});\n\nlet html = '<div class=\"faq-container\">\\n';\nObject.entries(byTheme).forEach(([theme, items]) => {\n  html += `  <div class=\"faq-theme\">\\n    <h2 class=\"faq-theme-title\">${safe(theme)}</h2>\\n`;\n  items.forEach(faq => {\n    html += `    <div class=\"faq-item\">\\n      <h3 class=\"faq-question\">${safe(faq.question)}</h3>\\n      <p class=\"faq-answer\">${safe(faq.answer)}</p>\\n    </div>\\n`;\n  });\n  html += '  </div>\\n';\n});\nhtml += '</div>';\n\nconst csv = [\n  \"question,answer,theme\",\n  ...faqs.map(f => `\"${safeCsv(f.question)}\",\"${safeCsv(f.answer)}\",\"${safeCsv(f.theme)}\"`)\n].join(\"\\n\");\n\nconst baseKeywords = [\"price\", \"cost\", \"expensive\", \"return\", \"refund\", \"warranty\", \"guarantee\", \"delivery\", \"shipping\", \"competitor\", \"vs\", \"versus\", \"compare\", \"better\", \"difference\", \"cancel\", \"trial\", \"risk\", \"safe\", \"secure\", \"trust\"];\nconst objections = faqs.filter(f =>\n  baseKeywords.some(k =>\n    (f.question || \"\").toLowerCase().includes(k) ||\n    (f.theme || \"\").toLowerCase().includes(k)\n  )\n);\n\nconst themes = Object.keys(byTheme).map(theme => ({\n  theme,\n  count: byTheme[theme].length\n}));\n\nreturn [{\n  json: {\n    success: true,\n    faq_count_requested: input.faq_count_requested,\n    faq_count_generated: faqs.length,\n    page_intelligence: {\n      page_type: classification.page_type,\n      industry: classification.industry,\n      business_model: classification.business_model,\n      brand_name: classification.brand_name,\n      product_name: classification.product_name,\n      price_tier: classification.price_tier,\n      buying_journey_stage: classification.buying_journey_stage,\n      target_customer: classification.target_customer\n    },\n    themes,\n    faqs,\n    json_ld: jsonLd,\n    shopify_html: html,\n    chatbot_csv: csv,\n    objection_faqs: objections\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        112
+      ],
+      "id": "f862c7fb-0878-4ea6-aa34-faeaff2a81cd",
+      "name": "Format All Outputs"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2208,
+        112
+      ],
+      "id": "93fc5240-f20c-423b-acb0-f6bf451511fb",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "model": "qwen2.5:3b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        784,
+        336
+      ],
+      "id": "724e997e-d48a-4ea1-8e27-3bf02a823a50",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "KSTkx1uPYEFlIOrA",
+          "name": "Ollama account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "qwen2.5:3b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        1136,
+        336
+      ],
+      "id": "a2a85287-36ac-4d7c-819a-0a8181320fd5",
+      "name": "Ollama Chat Model 2",
+      "credentials": {
+        "ollamaApi": {
+          "id": "KSTkx1uPYEFlIOrA",
+          "name": "Ollama account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "qwen2.5:3b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        1552,
+        336
+      ],
+      "id": "74ec4d95-b66c-4d2f-88a3-30cd981986bc",
+      "name": "Ollama Chat Model 3",
+      "credentials": {
+        "ollamaApi": {
+          "id": "KSTkx1uPYEFlIOrA",
+          "name": "Ollama account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate & Extract Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Extract Inputs": {
+      "main": [
+        [
+          {
+            "node": "Scrape Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Page": {
+      "main": [
+        [
+          {
+            "node": "Clean HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean HTML": {
+      "main": [
+        [
+          {
+            "node": "AI Step 1: Classify Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Step 1: Classify Page": {
+      "main": [
+        [
+          {
+            "node": "Parse Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Classification": {
+      "main": [
+        [
+          {
+            "node": "AI Step 2: Deep Dive Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Step 2: Deep Dive Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse Deep Dive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Deep Dive": {
+      "main": [
+        [
+          {
+            "node": "AI Step 3: Generate FAQs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Step 3: Generate FAQs": {
+      "main": [
+        [
+          {
+            "node": "Parse & Deduplicate FAQs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Deduplicate FAQs": {
+      "main": [
+        [
+          {
+            "node": "Format All Outputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format All Outputs": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Step 1: Classify Page",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model 2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Step 2: Deep Dive Analysis",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model 3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Step 3: Generate FAQs",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "12a45446-9b88-4cf9-a3ad-93346385f68e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "558d88703fb65b2d0e44613bc35916258b0f0bf983c5d4730c00c424b77ca36a"
+  },
+  "id": "4ylcsw3O8sqLp9nt",
+  "tags": []
+}
